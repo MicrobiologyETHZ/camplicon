@@ -4,22 +4,22 @@ IN DEVELOPMENT
 
 Find kmers that will act as effective custom amplicon primers
 
-positional arguments:
-  genomes_dir           Directory containing genomes in fasta format
-  background_dir        Directory containing background genomes in fasta
-                        format
+positional arguments:  
+  genomes_dir           Directory containing genomes in fasta format  
+  background_dir        Directory containing background genomes in fasta  
+                        format  
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --bg BG               Background genome, when only one genome is the target
-  --kmc_dir KMC_DIR     Directory containing the KMC executables
-  --kmc_counts KMC_COUNTS
-                        Sorted count file produced by KMC
-  --kmer_len KMER_LEN   Kmer/primer length
-  --min min_length      Minimum PCR product length
-  --max max_length      Maximum PCR product length
-  --p3 p3_config        Path to Primer3 config directory
-  --threads threads     Number of threads for execution
+optional arguments:  
+  -h, --help            show this help message and exit  
+  --bg BG               Background genome, when only one genome is the target  
+  --kmc_dir KMC_DIR     Directory containing the KMC executables  
+  --kmc_counts KMC_COUNTS  
+                        Sorted count file produced by KMC  
+  --kmer_len KMER_LEN   Kmer/primer length  
+  --min min_length      Minimum PCR product length  
+  --max max_length      Maximum PCR product length  
+  --p3 p3_config        Path to Primer3 config directory  
+  --threads threads     Number of threads for execution  
 
 KMC is available from https://github.com/refresh-bio/KMC
 

@@ -112,7 +112,7 @@ def rc_kmer(kmer):
     return(new_kmer)
 
 def check_kmer_primer3(kmer,p3_config):
-    # Check kmer for reasonableness as a primer with Pirimer3
+    # Check kmer for reasonableness as a primer with Primer3
     argument = "SEQUENCE_ID=primer_pair\\nPRIMER_TASK=check_primers\\nSEQUENCE_PRIMER={}\\nPRIMER_THERMODYNAMIC_PARAMETERS_PATH={}\\n=".format(kmer.seq,p3_config)
     output = subprocess.check_output("primer3_core <(printf \"{}\")".format(argument),shell=True,executable="/bin/bash").decode()
     if not re.findall('PRIMER_LEFT_NUM_RETURNED=0',output):

@@ -64,25 +64,50 @@ class Kmer_pair:
     def __str__(self):
         return("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}".format(self.left,self.right,self.nhits,self.nseq,self.info,self.penalty,self.length,self.se,self.offhits,self.offseqs,self.overlap))
 
-def run_kmc(genomes,kmc_dir,threads,kmer_len,bg=None):
+def parse_kmc_info(output):
+    data = dict((a.strip(),b.strip()) for a,b in [row.split(":") for row in [line for line in output.strip().split("\n")]])
+    return(data)    
+
+def run_kmc(genomes,bgs,kmc_dir,threads,kmer_len):
     # Run kmc on the first file
-    output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} db /tmp/".format(kmc_dir,threads,kmer_len,genomes[0]),shell=True).decode()
+    output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} db /tmp/ &> /dev/null".format(kmc_dir,threads,kmer_len,genomes[0]),shell=True).decode()
     lines = output.split("\n")
 
-    if bg is not None:
-        output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} current /tmp/".format(kmc_dir,threads,kmer_len,bg),shell=True).decode()
-        output = subprocess.check_output("{}/kmc_tools -t{} simple db current -cx9999 kmers_subtract new -cs8192".format(kmc_dir,threads),shell=True).decode()
-        shutil.move("new.kmc_pre","db.kmc_pre")
-        shutil.move("new.kmc_suf","db.kmc_suf")
-        sys.stderr.write("{}\n".format(bg))
-    else:
+    # Find common kmers in target genomes
+    if len(genomes)>1:
         for genome in genomes[1:]:
-            output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} current /tmp/".format(kmc_dir,threads,kmer_len,genome),shell=True).decode()
-            output = subprocess.check_output("{}/kmc_tools -t{} simple current db -cx9999 union new -cs8192".format(kmc_dir,threads),shell=True).decode()
+            sys.stderr.write("Adding {} to kmer database..\n".format(genome))
+            output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} current /tmp/ &> /dev/null".format(kmc_dir,threads,kmer_len,genome),shell=True).decode()
+            output = subprocess.check_output("{}/kmc_tools -hp -t{} simple current db -cx9999 union new -cs8192".format(kmc_dir,threads),shell=True).decode()
             shutil.move("new.kmc_pre","db.kmc_pre")
             shutil.move("new.kmc_suf","db.kmc_suf")
-            sys.stderr.write("{}\n".format(genome))
 
+    # Check the number of kmers
+    output = subprocess.check_output("{}/kmc_tools info db".format(kmc_dir),shell=True).decode()
+    data = parse_kmc_info(output)
+    kmer_count = int(data['total k-mers'])
+    sys.stderr.write("Database size: {} kmers\n".format(kmer_count))
+
+    # If the database isn't small enough, start to remove kmers from background genomes
+    for bg in bgs:
+        sys.stderr.write("Masking {} in kmer database: ".format(bg))
+        output = subprocess.check_output("{}/kmc -t{} -k{} -ci1 -cx1 -cs8192 -fm {} current /tmp/ &> /dev/null".format(kmc_dir,threads,kmer_len,bg),shell=True).decode()
+        output = subprocess.check_output("{}/kmc_tools -hp -t{} simple db current -cx9999 kmers_subtract new -cs8192".format(kmc_dir,threads),shell=True).decode()
+        shutil.move("new.kmc_pre","db.kmc_pre")
+        shutil.move("new.kmc_suf","db.kmc_suf")
+        
+        # Check the number of kmers as we go
+        output = subprocess.check_output("{}/kmc_tools info db".format(kmc_dir),shell=True).decode()
+        data = parse_kmc_info(output)
+        kmer_count = int(data['total k-mers'])
+        sys.stderr.write("{} kmers\n".format(kmer_count))
+
+        if kmer_count <= 10000:
+            break
+
+    # Dump the final database unless it's too large
+    if kmer_count > 10000:
+        exit("Kmer database is too large to continue: provide more background genomes or more closely related genomes")
     output = subprocess.check_output("{}/kmc_dump db ukmc.txt".format(kmc_dir),shell=True).decode()
 
     # Read in the results and format them
@@ -91,7 +116,7 @@ def run_kmc(genomes,kmc_dir,threads,kmer_len,bg=None):
         for line in fi:
             key,value = line.strip().split("\t")
             kmer_counts[key] = int(value)
-    
+    sys.stderr.write("Starting search with {} kmers..\n".format(len(kmer_counts)))
     return(kmer_counts)
 
 def read_kmc(kmc_file):
@@ -156,6 +181,7 @@ def make_kmer_pairs(kmers):
     kmer_pairs = []
     for i,(x,y) in enumerate(itertools.combinations(kmers,2)):
         kmer_pairs.append(Kmer_pair(i,x,y))
+    sys.stderr.write("Created {} kmer pairs..\n".format(len(kmer_pairs)))
     return(kmer_pairs)
 
 def check_kmer_pair_primer3(kmer_pair,p3_config):
@@ -242,7 +268,6 @@ if True:
     parser = argparse.ArgumentParser(description='Find kmers that will act as effective custom amplicon primers')
     parser.add_argument('genomes',metavar='genomes_dir',help='Directory containing genomes in fasta format')
     parser.add_argument('background',metavar='background_dir',help='Directory containing background genomes in fasta format')
-    parser.add_argument('--bg',help='Background genome, when only one genome is the target')
     parser.add_argument('--kmc_dir',help='Directory containing the KMC executables')
     parser.add_argument('--kmc_counts',help='Sorted count file produced by KMC')
     parser.add_argument('--kmer_len',default=20,type=int,help='Kmer/primer length')
@@ -258,21 +283,19 @@ if True:
 
     pool = mp.Pool(args.threads)
 
-    # Read in kmers, filter with Primer3 and generate reverse complements
+    # Read in or create kmers, filter with Primer3 and generate reverse complements
     genome_files = glob.glob('{}/*.fasta'.format(args.genomes))
-    if len(genome_files) == 1:
-        if args.bg is None:
-            exit("For only one genome, an example background genome must be provided, as closely related as possible")
+    bg_files = glob.glob('{}/*.fasta'.format(args.background))
+
     if args.kmc_counts is not None:
         kmers = read_kmc(args.kmc_counts)
     else:
-        if len(genome_files) == 1:
-            kmers = run_kmc(genome_files,args.kmc_dir,args.threads,args.kmer_len,args.bg)
-        else:
-            kmers = run_kmc(genome_files,args.kmc_dir,args.threads,args.kmer_len)
+        sys.stderr.write("Finding kmers for {} genomes..\n".format(len(genome_files)))
+        kmers = run_kmc(genome_files,bg_files,args.kmc_dir,args.threads,args.kmer_len)
         max_freq = max(kmers.values())
         kmers = {k:v for k,v in kmers.items() if v==max_freq}
         kmers = [Kmer(i,k,v) for i,(k,v) in enumerate(kmers.items())]
+
     kmers = pool.starmap(check_kmer_primer3,[(kmer,args.p3) for kmer in kmers])
     kmers = [kmer for kmer in kmers if kmer.melt > -1]
     kmers.extend([rc_kmer(x) for x in kmers])

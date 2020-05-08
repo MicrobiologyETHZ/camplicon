@@ -11,7 +11,6 @@ positional arguments:
 
 optional arguments:  
   -h, --help            show this help message and exit  
-  --bg BG               Background genome, when only one genome is the target  
   --kmc_dir KMC_DIR     Directory containing the KMC executables  
   --kmc_counts KMC_COUNTS  
                         Sorted count file produced by KMC  

@@ -165,11 +165,23 @@ def check_kmer_primer3(kmer, p3_config):
         kmer.melt = float(param['PRIMER_LEFT_0_TM'])
     return(kmer)
 
-def kmers_fasta(kmers, filename):
+def write_kmers_fasta(kmers, filename):
     # Output kmers to a fasta file for alignment
     with open(filename, 'w') as fo:
         for kmer in kmers:
-            fo.write(">{}\n{}\n".format(kmer.id, kmer.seq))
+            fo.write(f'>{kmer.id}_{kmer.freq}_{kmer.melt}\n{kmer.seq}\n')
+
+def read_kmers_fasta(filename):
+    # Read potential kmer file
+    kmers = []
+    with open(filename, 'r') as fi:
+        for i, line in enumerate(fi):
+            if i%2:
+                seq = line.strip()
+                kmers.append(Kmer(id, seq, freq, melt))
+            else:
+                id, freq, melt = line.strip().lstrip('>').split("_")
+    return(kmers)
 
 def align_kmers(kmers_file, target_file):
     # Align kmers fasta file against a target file with BWA, allowing only 1 error
@@ -318,8 +330,84 @@ def output_amplicon_sequences(products, bg_products, prefix):
             fo.write("{}\tBG\tProduct{}\n".format(p.template, seqs[p.seq]))
     return()
 
+def find_kmers(args):
+    print(f'Finding kmers of length {args.kmer_len} with sequences in {args.foreground} using KMC from {args.kmc_dir}')
+
+def find_primers(args):
+    print(f'Finding primers from {args.max_kmers} kmers in {args.kmers} using Primer3 from {args.p3}')
+
+def filter_primers(args):
+    print(f'Filtering primers from {args.primers}, targetting sequences in {args.foreground}, avoiding sequences in {args.background}. Acceptable products are between {args.min}bp and {args.max}bp, with {args.ref} for context')
+
+def predict_products(args):
+    print(f'Predicting PCR products for primer sequences {args.fwd_primer}:{args.rev_primer} in sequences from {args.foreground} and {args.background}')
+
+def full_workflow(args):
+    print(f'Running the full workflow')
+
 #def __main__():
 if True:
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=
+    """Find kmers that will act as effective custom amplicon primers
+
+Workflows:
+    full        Run the full camplicon workflow
+    pfp         Run primers, filter and predict from a sorted KMC count file
+       
+Commands:
+    kmers       Find suitable kmers from foreground sequences using KMC
+    primers     Find potential primers from suitable kmers
+    filter      Pair primers, find products in foreground and background sequences and score
+    predict     Predict PCR products for a given primer pair"""
+    )
+    parser.add_argument('--threads', metavar='threads', default=8, type=int, help='Number of threads for execution')
+    parser.add_argument('--prefix', metavar='output_prefix', default='camplicon', help='Output files prefix')
+
+    subparsers = parser.add_subparsers(dest='command', help=argparse.SUPPRESS)
+
+    kmers_parser = subparsers.add_parser('kmers', help='Find suitable kmers from foreground sequences using KMC')
+    kmers_parser.add_argument('foreground', metavar='fg_dir', help='Directory containing sequences in fasta format')
+    kmers_parser.add_argument('kmc_dir', help='Directory containing the KMC executables')
+    kmers_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
+
+    primers_parser = subparsers.add_parser('primers', help='Find potential primers from suitable kmers')
+    primers_parser.add_argument('kmers', metavar='kmers_file', help='Sorted count file produced by KMC')
+    primers_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    primers_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
+
+    filter_parser = subparsers.add_parser('filter', help='Pair primers, find products in foreground and background sequences and score')
+    filter_parser.add_argument('primers', metavar='primers_file', help='Primer file produced by the kmers subcommand')
+    filter_parser.add_argument('foreground', metavar='fg_dir', help='Directory containing foreground sequences in fasta format')
+    filter_parser.add_argument('background', metavar='bg_dir', help='Directory containing background sequences in fasta format')
+    filter_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    filter_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    filter_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
+
+    predict_parser = subparsers.add_parser('predict', help='Predict PCR products for a given primer pair')
+    predict_parser.add_argument('foreground', metavar='fg_dir', help='Directory containing foreground sequences in fasta format')
+    predict_parser.add_argument('background', metavar='bg_dir', help='Directory containing background sequences in fasta format')
+    predict_parser.add_argument('fwd_primer', help='Forward primer sequence')
+    predict_parser.add_argument('rev_primer', help='Reverse primer sequence')
+
+    full_parser = subparsers.add_parser('full', help='Run the full camplicon workflow')
+    full_parser.add_argument('foreground', metavar='fg_dir', help='Directory containing sequences in fasta format')
+    full_parser.add_argument('background', metavar='bg_dir', help='Directory containing background sequences in fasta format')
+    full_parser.add_argument('kmc_dir', help='Directory containing the KMC executables')
+    full_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
+    full_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    full_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
+    full_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    full_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    full_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
+
+    args = parser.parse_args()
+
+    subcommands = {'kmers':find_kmers, 'primers':find_primers, 'filter':filter_primers, 'predict':predict_products, 'full':full_workflow}
+
+    subcommands[args.command](args)
+
+    sys.exit()
+
     parser = argparse.ArgumentParser(description='Find kmers that will act as effective custom amplicon primers')
     parser.add_argument('genomes', metavar='genomes_dir', help='Directory containing genomes in fasta format')
     parser.add_argument('background', metavar='background_dir', help='Directory containing background genomes in fasta format')
@@ -366,7 +454,11 @@ if True:
     kmers = pool.starmap(check_kmer_primer3, [(kmer, args.p3) for kmer in kmers])
     kmers = [kmer for kmer in kmers if kmer.melt > -1]
     kmers.extend([rc_kmer(x) for x in kmers])
-    kmers_fasta(kmers, "kmers.fasta")
+    write_kmers_fasta(kmers, "kmers.fasta")
+
+    ### BREAKPOINT ###
+
+    kmers2 = read_kmers_fasta("kmers.fasta")
 
     # Generate kmer pairs
     kmer_pairs = make_kmer_pairs(kmers)
@@ -400,6 +492,8 @@ if True:
     sys.stdout.write("kmer1_id\tkmer1_seq\tkmer1_temp\tkmer2_id\tkmer2_seq\tkmer2_temp\tn_targets\tn_seqs\tinfo\tpenalty\tmean_len\tstd_len\toff_targets\toff_seqs\toverlap\n")
     for kmer_pair in kmer_pairs:
         sys.stdout.write("{}\n".format(kmer_pair))
+
+    # Separate this part to take any pair
     output_amplicon_sequences(all_products[kmer_pairs[0].pair_id], bg_products[kmer_pairs[0].pair_id], args.prefix)
 
     pool.close()

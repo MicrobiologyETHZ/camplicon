@@ -1,5 +1,8 @@
-test_fg
-test_bg
+test_*/*.amb
+test_*/*.ann
+test_*/*.bwt
+test_*/*.pac
+test_*/*.sa
 *kmc*
 *fasta
 *tab

@@ -6,3 +6,4 @@ test_*/*.sa
 *kmc*
 *fasta
 *tab
+.nfs*

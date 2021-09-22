@@ -1,0 +1,1 @@
+kmer1_id	kmer1_seq	kmer1_temp	kmer2_id	kmer2_seq	kmer2_temp	n_targets	n_seqs	info	penalty	mean_len	std_len	off_targets	off_seqs	overlap

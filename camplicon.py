@@ -281,7 +281,7 @@ def list_entropy(l):
     return(np.sum(entropy))
 
 def score_primer_pair(primer_pair, products, bg_products, min_length, max_length):
-    good_products = [product for product in products if (product.seq is not "") and (max_length > len(product) > min_length)]
+    good_products = [product for product in products if (product.seq != "") and (max_length > len(product) > min_length)]
     primer_pair.nhits = len(good_products)
     primer_pair.nseq = len(set(good_products))
     if primer_pair.nhits > 0:
@@ -289,7 +289,7 @@ def score_primer_pair(primer_pair, products, bg_products, min_length, max_length
         primer_pair.se = np.std([len(product) for product in good_products])/np.sqrt(len(good_products))
         primer_pair.info = list_entropy(good_products)
 
-    good_bg_products = [product for product in bg_products if (product.seq is not "") and (max_length > len(product))]
+    good_bg_products = [product for product in bg_products if (product.seq != "") and (max_length > len(product))]
     primer_pair.offhits = len(good_bg_products)
     primer_pair.offseqs = len(set(good_bg_products))
     primer_pair.overlap = len([bg_product for bg_product in set(good_bg_products) if bg_product in good_products])
@@ -323,11 +323,11 @@ def output_amplicon_sequences(products, bg_products, prefix):
     # Output all possible amplicon sequences
     both_products = products + bg_products
     seqs = {seq:i for i,seq in enumerate(set(p.seq for p in both_products))}
-    with open(prefix+".fasta", 'w') as fo:
+    with open(f'{prefix}_products.fasta', 'w') as fo:
         for seq,i in seqs.items():
             fo.write(f'>Product{i}_{len(seq)}\n')
             fo.write(f'{seq}\n')
-    with open(prefix+".tab", 'w') as fo:
+    with open(f'{prefix}_products.tab', 'w') as fo:
         for p in products:
             fo.write(f'{p.template}\tFG\tProduct{seqs[p.seq]}\n')
         for p in bg_products:
@@ -369,7 +369,7 @@ def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg
     primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
     primer_pairs = sorted(primer_pairs, key=lambda primer_pair: (primer_pair.nhits, primer_pair.nseq, primer_pair.info, -primer_pair.penalty), reverse=True)
 
-    return(primer_pairs)
+    return(primer_pairs, fg_products, bg_products)
 
 ### COMMANDS AND WORKFLOWS ###
 
@@ -413,33 +413,16 @@ def filter_primers(args, pool):
 
     # Read in primer file
     primers = read_primers_fasta(args.primer_file)
-    primer_len = len(primers[0].seq)
 
     # Find all likely sequence files
-     
+    fg_files, bg_files = find_sequence_files(args.fg, args.bg)
 
     # Generate primer pairs
     primer_pairs = make_primer_pairs(primers)
     primer_pairs = pool.starmap(check_primer_pair_primer3, [(primer_pair, args.p3) for primer_pair in primer_pairs])
 
-    # Generate products for each primer pair for each foreground file
-    fg_products = pool.starmap(generate_products_from_genome, [(primers, args.primer_file, fg_file, primer_pairs, primer_len) for fg_file in fg_files])
-
-    # Rearrange all products to first reference primer pair, then genome
-    fg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in fg_products] for primer_pair in primer_pairs}
-
-    # Generate products for each primer pair for each off-target genome
-    bg_products = pool.starmap(generate_products_from_genome, [(primers, args.primer_file, bg_file, primer_pairs, primer_len) for bg_file in bg_files])
-
-    # Rearrange bg products to first reference primer pair, then genome
-    bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
-
-    # Score primer pairs
-    primer_pairs = [score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], args.min, args.max) for primer_pair in primer_pairs]
-
-    # Filter and sort primer pairs
-    primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
-    primer_pairs = sorted(primer_pairs, key=lambda primer_pair: (primer_pair.nhits, primer_pair.nseq, primer_pair.info, -primer_pair.penalty), reverse=True)
+    # Generate products and score
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min, args.max)
 
     # Locate primers in context
     if args.ref:
@@ -453,7 +436,7 @@ def filter_primers(args, pool):
 
     sys.stdout.write(f'Found {len(primer_pairs)} primer_pairs, output to file: {args.prefix}_pairs.txt\n')
 
-    return()
+    return(primer_pairs[0].left.seq, primer_pairs[0].right.seq)
 
 def predict_products(args):
     print(f'Predicting PCR products for primer sequences {args.fwd_primer}:{args.rev_primer} in sequences from {args.foreground} and {args.background}')
@@ -465,40 +448,33 @@ def predict_products(args):
     # Create objects to mimic filter steps
     primer_pairs = [Primer_pair(0, Primer(0, args.fwd_primer), Primer(1, args.rev_primer))]
     primers = [primer_pair[0].left, primer_pair[0].right]
-    primer_len = len(primers[0].seq)
     write_primers_fasta(primers, f'{args.prefix}_pair.fasta')
 
     # Find all likely sequence files
-    fg_files = glob.glob(f'{args.fg}/*.fasta')
-    fg_files.extend(glob.glob(f'{args.fg}/*.fa'))
-    fg_files.extend(glob.glob(f'{args.fg}/*.fna'))
-
-    bg_files = glob.glob(f'{args.bg}/*.fasta')
-    bg_files.extend(glob.glob(f'{args.bg}/*.fa'))
-    bg_files.extend(glob.glob(f'{args.bg}/*.fna'))
-
-    # Generate products
-    fg_products = pool.starmap(generate_products_from_genome, [(primers, f'{args.prefix}_pair.fasta', fg_file, primer_pairs, primer_len) for fg_file in fg_files])
-    fg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in fg_products] for primer_pair in primer_pairs}
-    bg_products = pool.starmap(generate_products_from_genome, [(primers, f'{args.prefix}_pair.fasta', bg_file, primer_pairs, primer_len) for bg_file in bg_files])
-    bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
-
-    # Score primer pairs
-    primer_pairs = [score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], args.min, args.max) for primer_pair in primer_pairs]
+    fg_files, bg_files = find_sequence_files(args.fg, args.bg)
     
+    # Generate products
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, min, max)
+    
+    output_amplicon_sequences(fg_products[primer_pairs[0].pair_id], bg_products[primer_pairs[0].pair_id], args.prefix)
+    
+    return()
 
-# Need separate functions for:
-#     Find all files
-#     Generate products and score primer pairs
-
-def full_workflow(args):
+def full_workflow(args, pool):
     print(f'Running the full workflow')
+    args.kmer_file = find_kmers(args, pool)
+    args.primer_file = find_primers(args, pool)
+    args.fp, args.rp = filter_primers(args, pool)
+    predict_products(args, pool)
 
-def pfp_workflow(args):
+def pfp_workflow(args, pool):
     print(f'Running the primers-filter-predict workflow')
+    args.primer_file = find_primers(args, pool)
+    args.fp, args.rp = filter_primers(args, pool)
+    predict_products(args, pool)
 
-#def __main__():
-if True:
+def __main__():
+    # Set up arguments and subparsers
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--threads', metavar='threads', default=8, type=int, help='Number of threads for execution')
     parser.add_argument('--prefix', metavar='output_prefix', default='camplicon', help='Output files prefix')
@@ -530,7 +506,7 @@ if True:
     predict_parser.add_argument('--fg', '--foreground', required=True, metavar='fg_dir', help='Directory containing foreground sequences in fasta format')
     predict_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
     predict_parser.add_argument('--fp', '--fwd_primer', required=True, help='Forward primer sequence')
-    predict_parser.add_argument('--r[', '--rev_primer', required=True, help='Reverse primer sequence')
+    predict_parser.add_argument('--rp', '--rev_primer', required=True, help='Reverse primer sequence')
 
     full_parser = subparsers.add_parser('full', help='Run the full camplicon workflow')
     full_parser.add_argument('--fg', '--foreground', required=True, metavar='fg_dir', help='Directory containing sequences in fasta format')
@@ -542,6 +518,17 @@ if True:
     full_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
     full_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
     full_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
+    
+    pfp_parser = subparsers.add_parser('pfp', help='Run the workflow starting from a KMC kmer count file')
+    pfp_parser.add_argument('--fg', '--foreground', required=True, metavar='fg_dir', help='Directory containing sequences in fasta format')
+    pfp_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
+    pfp_parser.add_argument('--kmer_file', required=True, metavar='kmer_file', help='Sorted count file produced by KMC')
+    pfp_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
+    pfp_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    pfp_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
+    pfp_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    pfp_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    pfp_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
 
     args = parser.parse_args()
 
@@ -552,100 +539,9 @@ if True:
     subcommands = {'kmers':find_kmers, 'primers':find_primers, 'filter':filter_primers, 'predict':predict_products, 'full':full_workflow, 'pfp':pfp_workflow}
     subcommands[args.command](args, pool)
 
-    
-
-    sys.exit()
-
-    parser = argparse.ArgumentParser(description='Find kmers that will act as effective custom amplicon primers')
-    parser.add_argument('genomes', metavar='genomes_dir', help='Directory containing genomes in fasta format')
-    parser.add_argument('background', metavar='background_dir', help='Directory containing background genomes in fasta format')
-    parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target genomes to identify context-aware primer locations. File name should be identical except for the file type suffix.')
-    parser.add_argument('--prefix', metavar='output_prefix', default='camplicon', help='output_prefix')
-    parser.add_argument('--kmc_dir', help='Directory containing the KMC executables')
-    parser.add_argument('--kmc_counts', help='Sorted count file produced by KMC')
-    parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
-    parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
-    parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
-    parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
-    parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
-    parser.add_argument('--threads', metavar='threads', default=8, type=int, help='Number of threads for execution')
-
-    args = parser.parse_args()
-
-    if (args.kmc_dir is None) and (args.kmc_counts is None):
-        sys.exit("One of --kmc_dir or --kmc_counts must be provided. Exiting..")
-
-    pool = mp.Pool(args.threads)
-
-    # Read in or create kmers, filter with Primer3 and generate reverse complements
-    genome_files = glob.glob('{}/*.fasta'.format(args.genomes))
-    genome_files.extend(glob.glob('{}/*.fa'.format(args.genomes)))
-    genome_files.extend(glob.glob('{}/*.fna'.format(args.genomes)))
-    bg_files = glob.glob('{}/*.fasta'.format(args.background))
-    bg_files.extend(glob.glob('{}/*.fa'.format(args.background)))
-    bg_files.extend(glob.glob('{}/*.fna'.format(args.background)))
-    if args.kmc_counts is not None:
-        kmers = read_kmc(args.kmc_counts)
-        max_freq = max(kmer.freq for kmer in kmers)
-        kmers = [kmer for kmer in kmers if kmer.freq==max_freq]
-    else:
-        sys.stderr.write("Finding kmers for {} genomes..\n".format(len(genome_files)))
-        kmers = run_kmc(genome_files, bg_files, args.kmc_dir, args.threads, args.kmer_len)
-        max_freq = max(kmers.values())
-        kmers = {k:v for k, v in kmers.items() if v==max_freq}
-        kmers = [Kmer(i, k, v) for i, (k, v) in enumerate(kmers.items())]
-
-    # If the list of kmers is too large, subsample
-    kmers = random.sample(kmers, args.max_kmers)
-    sys.stderr.write("Starting search with {} kmers..\n".format(len(kmers)))
-
-    kmers = pool.starmap(check_kmer_primer3, [(kmer, args.p3) for kmer in kmers])
-    kmers = [kmer for kmer in kmers if kmer.melt > -1]
-    kmers.extend([rc_kmer(x) for x in kmers])
-    write_kmers_fasta(kmers, "kmers.fasta")
-
-    ### BREAKPOINT ###
-
-    kmers2 = read_kmers_fasta("kmers.fasta")
-
-    # Generate kmer pairs
-    primer_pairs = make_primer_pairs(kmers)
-    primer_pairs = pool.starmap(check_primer_pair_primer3, [(primer_pair, args.p3) for primer_pair in primer_pairs])
-
-    # Generate products for each kmer pair for each genome
-    all_products = pool.starmap(generate_products_from_genome, [(kmers, "kmers.fasta", genome_file, primer_pairs, args.kmer_len) for genome_file in genome_files])
-
-    # Rearrange all products to first reference kmer pair, then genome
-    all_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in all_products] for primer_pair in primer_pairs}
-
-    # Generate products for each kmer pair for each off-target genome
-    bg_files = glob.glob('{}/*.fasta'.format(args.background))
-    bg_products = pool.starmap(generate_products_from_genome, [(kmers, "kmers.fasta", bg_file, primer_pairs, args.kmer_len) for bg_file in bg_files])
-
-    # Rearrange bg products to first reference kmer pair, then genome
-    bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
-
-    # Score kmer pairs
-    primer_pairs = [score_primer_pair(primer_pair, all_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], args.min, args.max) for primer_pair in primer_pairs]
-
-    # Filter and sort kmer pairs
-    primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
-    primer_pairs = sorted(primer_pairs, key=lambda primer_pair: (primer_pair.nhits, primer_pair.nseq, primer_pair.info, -primer_pair.penalty), reverse=True)
-
-    # Locate primers in context
-    if args.ref:
-        primer_pairs = pool.starmap(locate_primers, [(args.ref, primer_pair, all_products[primer_pair.pair_id]) for primer_pair in primer_pairs])
-
-    # Output results
-    sys.stdout.write("kmer1_id\tkmer1_seq\tkmer1_temp\tkmer2_id\tkmer2_seq\tkmer2_temp\tn_targets\tn_seqs\tinfo\tpenalty\tmean_len\tstd_len\toff_targets\toff_seqs\toverlap\n")
-    for primer_pair in primer_pairs:
-        sys.stdout.write("{}\n".format(primer_pair))
-
-    # Separate this part to take any pair
-    output_amplicon_sequences(all_products[primer_pairs[0].pair_id], bg_products[primer_pairs[0].pair_id], args.prefix)
-
+    # Close pool
     pool.close()
 
-#if __name__ == "__main__":
-#    __main__()
+if __name__ == "__main__":
+    __main__()
 

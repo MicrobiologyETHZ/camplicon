@@ -386,7 +386,10 @@ def find_kmers(args, pool):
     return(f'{args.prefix}_ukmc.txt')
 
 def find_primers(args, pool):
-    print(f'Finding primers from a maximum of {args.max_kmers} kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
+    if args.max_kmers != 0:
+        print(f'Finding primers from a maximum of {args.max_kmers} kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
+    else:
+        print(f'Finding primers from all kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
 
     # Read in kmc_dump file
     kmers = read_kmc(args.kmer_file)
@@ -394,7 +397,9 @@ def find_primers(args, pool):
     kmers = [kmer for kmer in kmers if kmer.freq==max_freq]
 
     # If the list of kmers is too large, subsample
-    kmers = random.sample(kmers, args.max_kmers)
+    if args.max_kmers != 0:
+        if len(kmers) > args.max_kmers:
+            kmers = random.sample(kmers, args.max_kmers)
 
     # Run Primer3 on kmers
     primers = pool.starmap(check_kmer_primer3, [(kmer, args.p3) for kmer in kmers])
@@ -490,7 +495,7 @@ def __main__():
 
     primers_parser = subparsers.add_parser('primers', help='Find potential primers from suitable kmers')
     primers_parser.add_argument('--kmer_file', required=True, metavar='kmer_file', help='Sorted count file produced by KMC')
-    primers_parser.add_argument('--max_kmers', metavar='max_kmers', default=1000, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    primers_parser.add_argument('--max_kmers', metavar='max_kmers', default=1000, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers.')
     primers_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
 
     filter_parser = subparsers.add_parser('filter', help='Pair primers, find products in foreground and background sequences and score')
@@ -513,7 +518,7 @@ def __main__():
     full_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
     full_parser.add_argument('--kmc', '--kmc_dir', required=True, help='Directory containing the KMC executables')
     full_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
-    full_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    full_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to use all kmers.')
     full_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     full_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
     full_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
@@ -524,7 +529,7 @@ def __main__():
     pfp_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
     pfp_parser.add_argument('--kmer_file', required=True, metavar='kmer_file', help='Sorted count file produced by KMC')
     pfp_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
-    pfp_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates)')
+    pfp_parser.add_argument('--max_kmers', metavar='max_kmers', default=100, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers.')
     pfp_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     pfp_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
     pfp_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')

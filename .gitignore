@@ -9,6 +9,4 @@ test_bg/*.bwt
 test_bg/*.pac
 test_bg/*.sa
 *kmc*
-*fasta
-*tab
 .nfs*

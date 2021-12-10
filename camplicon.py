@@ -209,18 +209,21 @@ def parse_aln(aln):
                 primer_hits[primer_hit.primer_id] = primer_hit
     return(primer_hits)
 
-def make_primer_pairs(primers):
+def generate_primer_pairs(primers):
     # Create all possible pairs of primers
-    primer_pairs = []
-    for i, (x, y) in enumerate(itertools.combinations(primers, 2)):
-        primer_pairs.append(Primer_pair(i, x, y))
-    sys.stderr.write(f'Created {len(primer_pairs)} kmer pairs..\n')
-    return(primer_pairs)
+    primer_pairs = itertools.combinations(primers, 2)
+    i = 0
+    while True:
+        try:
+            primer_pair = next(primer_pairs)
+        except StopIteration:
+            return
+        yield(Primer_pair(i, primer_pair[0], primer_pair[1]))
 
 def check_primer_pair_primer3(primer_pair, p3_config):
     # Primer3 doesn't function for a sequence and its exact reverse complement
     if str(Seq.Seq(primer_pair.left.seq).reverse_complement()) == primer_pair.right.seq:
-        return(primer_pair)
+        return(None)
 
     argument = f'SEQUENCE_ID=primer_pair\\nPRIMER_TASK=check_primers\\nSEQUENCE_PRIMER={primer_pair.left.seq}\\nSEQUENCE_PRIMER_REVCOMP={primer_pair.right.seq}\\nPRIMER_THERMODYNAMIC_PARAMETERS_PATH={p3_config}\\n='
     output = subprocess.check_output(f'primer3_core <(printf \"{argument}\")', shell=True, executable="/bin/bash").decode()
@@ -231,7 +234,9 @@ def check_primer_pair_primer3(primer_pair, p3_config):
             parts = line.split("=")
             param[parts[0]] = parts[1]
         primer_pair.penalty = float(param['PRIMER_PAIR_0_PENALTY'])
-    return(primer_pair)
+        return(primer_pair)
+    else:
+        return(None)
 
 def read_genome(genome_file):
     genome = SeqIO.to_dict(SeqIO.parse(genome_file, 'fasta'))
@@ -239,19 +244,18 @@ def read_genome(genome_file):
         
 def generate_product(primer_pair, primer_hits, genome, primer_len):
     # Check if primers hit anything
-    no_product = PCR_Product(genome[list(genome.keys())[0]].id,"N",-1,-1)
     if primer_pair.left.id in primer_hits.keys():
         lhit = primer_hits[primer_pair.left.id]
     else:
-        return(no_product)
+        return(None)
     if primer_pair.right.id in primer_hits.keys():
         rhit = primer_hits[primer_pair.right.id]
     else:
-        return(no_product)
+        return(None)
 
     # Check if kmers are on opposite strands
     if lhit.strand == rhit.strand:
-        return(no_product)
+        return(None)
 
     # Check if kmers are on the same contig
     if lhit.target==rhit.target:
@@ -261,10 +265,9 @@ def generate_product(primer_pair, primer_hits, genome, primer_len):
             product = PCR_Product(genome[lhit.target].id, str(genome[rhit.target].seq[(rhit.pos-1):(lhit.pos+primer_len-1)]), rhit.pos, lhit.pos+primer_len)
         # Remove huge products, likely the result of hits at both ends of the linear genome sequence
         if len(product.seq) > 10000:
-           return(no_product)
+           return(None)
     else:
-        return(no_product)
-
+        return(None)
     return(product)
 
 def generate_products_from_genome(primers, primers_file, genome_file, primer_pairs, primer_len):
@@ -346,32 +349,34 @@ def find_sequence_files(fg, bg):
 
     return(fg_files, bg_files)
 
-def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg_files, min, max):
+def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg_files, min, max, pool):
     # Separate function as multiple commands end up using it
     primer_len = len(primers[0].seq)
 
     # Generate products for each primer pair for each foreground file
     fg_products = pool.starmap(generate_products_from_genome, [(primers, primer_file, fg_file, primer_pairs, primer_len) for fg_file in fg_files])
-
+    print('made fg_products')
     # Rearrange all products to first reference primer pair, then genome
     fg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in fg_products] for primer_pair in primer_pairs}
-
+    print('rearranged fg_products')
     # Generate products for each primer pair for each off-target genome
     bg_products = pool.starmap(generate_products_from_genome, [(primers, primer_file, bg_file, primer_pairs, primer_len) for bg_file in bg_files])
-
+    print('made bg_products')
     # Rearrange bg products to first reference primer pair, then genome
     bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
-
+    print('rearranged bg_products')
     # Score primer pairs
     primer_pairs = [score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], min, max) for primer_pair in primer_pairs]
-
+    print('scored primer pairs')
     # Filter and sort primer pairs
     primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
     primer_pairs = sorted(primer_pairs, key=lambda primer_pair: (primer_pair.nhits, primer_pair.nseq, primer_pair.info, -primer_pair.penalty), reverse=True)
 
     return(primer_pairs, fg_products, bg_products)
 
+##############################
 ### COMMANDS AND WORKFLOWS ###
+##############################
 
 def find_kmers(args, pool):
     sys.stdout.write(f'Finding kmers of length {args.kmer_len} from sequences in {args.fg} using KMC from {args.kmc}\n')
@@ -418,17 +423,22 @@ def filter_primers(args, pool):
 
     # Read in primer file
     primers = read_primers_fasta(args.primer_file)
-
+    primers = primers[0:100]
+    print(f'{len(primers)} primers')
     # Find all likely sequence files
     fg_files, bg_files = find_sequence_files(args.fg, args.bg)
 
     # Generate primer pairs
-    primer_pairs = make_primer_pairs(primers)
+    primer_pairs = generate_primer_pairs(primers)
+    # Filter for valid pairs with Primer3
     primer_pairs = pool.starmap(check_primer_pair_primer3, [(primer_pair, args.p3) for primer_pair in primer_pairs])
-
+    primer_pairs = filter(lambda x: x is not None, primer_pairs)
+    # See if the list is manageable
+    primer_pairs = list(primer_pairs)
+    print(f'{len(primer_pairs)} viable primer pairs')
     # Generate products and score
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min, args.max)
-
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min, args.max, pool)
+    print(f'{len(primer_pairs)} survived scoring')
     # Locate primers in context
     if args.ref:
         primer_pairs = pool.starmap(locate_primers, [(args.ref, primer_pair, fg_products[primer_pair.pair_id]) for primer_pair in primer_pairs])

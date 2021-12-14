@@ -212,10 +212,11 @@ def parse_aln(aln):
 def generate_primer_pairs(primers):
     # Create all possible pairs of primers
     primer_pairs = itertools.combinations(primers, 2)
-    i = 0
+    i = -1
     while True:
         try:
             primer_pair = next(primer_pairs)
+            i += 1
         except StopIteration:
             return
         yield(Primer_pair(i, primer_pair[0], primer_pair[1]))
@@ -270,9 +271,9 @@ def generate_product(primer_pair, primer_hits, genome, primer_len):
         return(None)
     return(product)
 
-def generate_products_from_genome(primers, primers_file, genome_file, primer_pairs, primer_len):
+def generate_products_from_genome(primers, primer_file, genome_file, primer_pairs, primer_len):
     genome = read_genome(genome_file)
-    aln = align_primers(primers_file, genome_file)
+    aln = align_primers(primer_file, genome_file)
     primer_hits = parse_aln(aln)
 
     products = {primer_pair.pair_id:generate_product(primer_pair, primer_hits, genome, primer_len) for primer_pair in primer_pairs}
@@ -355,6 +356,10 @@ def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg
 
     # Generate products for each primer pair for each foreground file
     fg_products = pool.starmap(generate_products_from_genome, [(primers, primer_file, fg_file, primer_pairs, primer_len) for fg_file in fg_files])
+    # Check if there are any foreground products to score
+    if len([product for products in fg_products for product in products.values() if product is not None]) == 0:
+        sys.stderr.write('There are no viable foreground PCR products. Quitting.\n')
+        sys.exit(1)
     print('made fg_products')
     # Rearrange all products to first reference primer pair, then genome
     fg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in fg_products] for primer_pair in primer_pairs}
@@ -457,7 +462,7 @@ def predict_products(args):
     print(f'Predicting PCR products for primer sequences {args.fwd_primer}:{args.rev_primer} in sequences from {args.foreground} and {args.background}')
 
     if len(args.fwd_primer) != len(args.rev_primer):
-        sys.stderr.out('Primers must be the same length. Quitting.')
+        sys.stderr.write('Primers must be the same length. Quitting.\n')
         sys.exit(1)
 
     # Create objects to mimic filter steps
@@ -488,7 +493,8 @@ def pfp_workflow(args, pool):
     args.fp, args.rp = filter_primers(args, pool)
     predict_products(args, pool)
 
-def __main__():
+if True:
+#def __main__():
     # Set up arguments and subparsers
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--threads', metavar='threads', default=8, type=int, help='Number of threads for execution')
@@ -557,6 +563,6 @@ def __main__():
     # Close pool
     pool.close()
 
-if __name__ == "__main__":
-    __main__()
+#if __name__ == "__main__":
+#    __main__()
 

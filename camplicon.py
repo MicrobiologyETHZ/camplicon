@@ -205,7 +205,8 @@ def parse_aln(aln):
             if fields[1] != '4':
                 strand = (int(fields[1])/8)-1
                 edist = re.sub("NM:i:", "", fields[12])
-                primer_hit = Primer_hit(fields[0], fields[2], strand, fields[3], edist)
+                primer_id = fields[0].split("_")[0]
+                primer_hit = Primer_hit(primer_id, fields[2], strand, fields[3], edist)
                 primer_hits[primer_hit.primer_id] = primer_hit
     return(primer_hits)
 
@@ -284,16 +285,18 @@ def list_entropy(l):
     entropy = [-x*np.log2(x) for x in freq]
     return(np.sum(entropy))
 
-def score_primer_pair(primer_pair, products, bg_products, min_length, max_length):
-    good_products = [product for product in products if (product.seq != "") and (max_length > len(product) > min_length)]
-    primer_pair.nhits = len(good_products)
-    primer_pair.nseq = len(set(good_products))
+def score_primer_pair(primer_pair, fg_products, bg_products, min_length, max_length):
+    good_fg_products = [product for product in fg_products if product is not None]
+    good_fg_products = [product for product in good_fg_products if (product.seq != "") and (max_length > len(product) > min_length)]
+    primer_pair.nhits = len(good_fg_products)
+    primer_pair.nseq = len(set(good_fg_products))
     if primer_pair.nhits > 0:
-        primer_pair.length = np.mean([len(product) for product in good_products])
-        primer_pair.se = np.std([len(product) for product in good_products])/np.sqrt(len(good_products))
-        primer_pair.info = list_entropy(good_products)
+        primer_pair.length = np.mean([len(product) for product in good_fg_products])
+        primer_pair.se = np.std([len(product) for product in good_fg_products])/np.sqrt(len(good_fg_products))
+        primer_pair.info = list_entropy(good_fg_products)
 
-    good_bg_products = [product for product in bg_products if (product.seq != "") and (max_length > len(product))]
+    good_bg_products = [product for product in bg_products if product is not None]
+    good_bg_products = [product for product in good_bg_products if (product.seq != "") and (max_length > len(product))]
     primer_pair.offhits = len(good_bg_products)
     primer_pair.offseqs = len(set(good_bg_products))
     primer_pair.overlap = len([bg_product for bg_product in set(good_bg_products) if bg_product in good_products])
@@ -403,8 +406,11 @@ def find_primers(args, pool):
 
     # Read in kmc_dump file
     kmers = read_kmc(args.kmer_file)
-    max_freq = max(kmer.freq for kmer in kmers)
-    kmers = [kmer for kmer in kmers if kmer.freq==max_freq]
+
+    # Filter to acceptable frequencies
+    if args.freq is None:
+        args.freq = max(kmer.freq for kmer in kmers)
+    kmers = [kmer for kmer in kmers if kmer.freq>=args.freq]
 
     # If the list of kmers is too large, subsample
     if args.max_kmers != 0:
@@ -513,6 +519,7 @@ if True:
     primers_parser = subparsers.add_parser('primers', help='Find potential primers from suitable kmers')
     primers_parser.add_argument('--kmer_file', required=True, metavar='kmer_file', help='Sorted count file produced by KMC')
     primers_parser.add_argument('--max_kmers', metavar='max_kmers', default=1000, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers.')
+    primers_parser.add_argument('--freq', metavar='low_freq', type=int, help='Minimum frequency of kmer to check. Default: most frequent.')
     primers_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
 
     filter_parser = subparsers.add_parser('filter', help='Pair primers, find products in foreground and background sequences and score')
@@ -537,6 +544,7 @@ if True:
     full_parser.add_argument('--kmc', '--kmc_dir', required=True, help='Directory containing the KMC executables')
     full_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
     full_parser.add_argument('--max_kmers', metavar='max_kmers', default=1000, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to use all kmers.')
+    full_parser.add_argument('--freq', metavar='low_freq', type=int, help='Minimum frequency of kmer to check. Default: most frequent.')
     full_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     full_parser.add_argument('--max_primers', metavar='max_primers', default=1000, type=int, help='Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.')
     full_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
@@ -549,6 +557,7 @@ if True:
     pfp_parser.add_argument('--kmer_file', required=True, metavar='kmer_file', help='Sorted count file produced by KMC')
     pfp_parser.add_argument('--kmer_len', default=20, type=int, help='Kmer/primer length')
     pfp_parser.add_argument('--max_kmers', metavar='max_kmers', default=1000, type=int, help='Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers.')
+    pfp_parser.add_argument('--freq', metavar='low_freq', type=int, help='Minimum frequency of kmer to check. Default: most frequent.')
     pfp_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     pfp_parser.add_argument('--max_primers', metavar='max_primers', default=1000, type=int, help='Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.')
     pfp_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')

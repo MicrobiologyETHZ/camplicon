@@ -299,7 +299,7 @@ def score_primer_pair(primer_pair, fg_products, bg_products, min_length, max_len
     good_bg_products = [product for product in good_bg_products if (product.seq != "") and (max_length > len(product))]
     primer_pair.offhits = len(good_bg_products)
     primer_pair.offseqs = len(set(good_bg_products))
-    primer_pair.overlap = len([bg_product for bg_product in set(good_bg_products) if bg_product in good_products])
+    primer_pair.overlap = len([bg_product for bg_product in set(good_bg_products) if bg_product in good_fg_products])
 
     return(primer_pair)
 

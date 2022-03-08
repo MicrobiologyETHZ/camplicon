@@ -12,6 +12,8 @@ The workflow is split into stages, each of which can be selected with the ``comm
 
 ## kmers
 
+| Option | Description |
+| ------ | ----------- |
 | --fg fg_dir, --foreground fg_dir | Directory containing sequences in fasta format |
 | --bg bg_dir, --background bg_dir | Directory containing sequences in fasta format |
 | --kmc kmc_dir, --kmc_dir kmc_dir | Directory containing the KMC executables |
@@ -19,6 +21,8 @@ The workflow is split into stages, each of which can be selected with the ``comm
 
 ## primers
 
+| Option | Description |
+| ------ | ----------- |
 | --kmer_file kmer_file | Sorted count file produced by KMC |
 | --max_kmers max_kmers | Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers. |
 | --freq low_freq       | Minimum frequency of kmer to check. Default: most frequent. |
@@ -26,6 +30,8 @@ The workflow is split into stages, each of which can be selected with the ``comm
 
 ## filter
 
+| Option | Description |
+| ------ | ----------- |
 | --primer_file PRIMER_FILE | Primer file produced by the kmers subcommand |
 | --max_primers max_primers | Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers. |
 | --fg fg_dir, --foreground fg_dir | Directory containing foreground sequences in fasta format |
@@ -37,6 +43,8 @@ The workflow is split into stages, each of which can be selected with the ``comm
 
 ## predict
 
+| Option | Description |
+| ------ | ----------- |
 | --fg fg_dir, --foreground fg_dir | Directory containing foreground sequences in fasta format |
 | --bg bg_dir, --background bg_dir | Directory containing background sequences in fasta format |
 | --fp FP, --fwd_primer FP | Forward primer sequence |

@@ -8,7 +8,7 @@ Find kmers that will act as effective custom amplicon primers
 
 ``python camplicon.py <command> <options>``
 
-The workflow is split into stages, each of which can be selected with the ``command`` argument, or one of two full workflows can be chosen:
+The workflow is split into stages, each of which can be selected with the ``command`` argument, or one of two full workflows can be chosen.
 
 ## kmers
 
@@ -49,6 +49,14 @@ The workflow is split into stages, each of which can be selected with the ``comm
 | --bg bg_dir, --background bg_dir | Directory containing background sequences in fasta format |
 | --fp FP, --fwd_primer FP | Forward primer sequence |
 | --rp RP, --rev_primer RP | Reverse primer sequence |
+
+## full
+
+This workflow runs kmers --> primers --> filter --> predict (on the best primer pair)
+
+## pfp
+
+This workflow requires a KMC kmer count file and then runs primers --> filter --> predict (on the best primer pair)
 
 ## How it works
 KMC is used to find the unique kmers in a genome, which are then added to a master count of kmers and the number of genomes they appear in uniquely. For now we ignore that some kmers may appear multiple times in a specific genome and therefore be unsuitable as unique primers.

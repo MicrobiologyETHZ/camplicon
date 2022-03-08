@@ -4,76 +4,43 @@ IN DEVELOPMENT
 
 Find kmers that will act as effective custom amplicon primers
 
-positional arguments:
-  command (kmers|primers|filter|predict|full|pfp)
-    kmers               Find suitable kmers in foreground sequences, masking
-                        those in background sequences, using KMC
-    primers             Find potential primers from suitable kmers
-    filter              Pair primers, find products in foreground and
-                        background sequences and score
-    predict             Predict PCR products for a given primer pair
-    full                Run the full camplicon workflow
-    pfp                 Run the workflow starting from a KMC kmer count file
+## Usage
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -t threads, --threads threads
-                        Number of threads for execution
-  --prefix output_prefix
+``python camplicon.py <command> <options>``
+
+The workflow is split into stages, each of which can be selected with the ``command`` argument, or one of two full workflows can be chosen:
 
 ## kmers
 
-  --fg fg_dir, --foreground fg_dir
-                        Directory containing sequences in fasta format
-  --bg bg_dir, --background bg_dir
-                        Directory containing sequences in fasta format
-  --kmc kmc_dir, --kmc_dir kmc_dir
-                        Directory containing the KMC executables
-  --kmer_len kmer_len   Kmer/primer length
+  --fg fg_dir, --foreground fg_dir  Directory containing sequences in fasta format  
+  --bg bg_dir, --background bg_dir  Directory containing sequences in fasta format  
+  --kmc kmc_dir, --kmc_dir kmc_dir  Directory containing the KMC executables  
+  --kmer_len kmer_len               Kmer/primer length
 
 ## primers
 
-  --kmer_file kmer_file
-                        Sorted count file produced by KMC
-  --max_kmers max_kmers
-                        Maximum number of kmers to try (selected at random
-                        from candidates). Use 0 to try all kmers.
-  --freq low_freq       Minimum frequency of kmer to check. Default: most
-                        frequent.
-  --p3 p3_config        Path to Primer3 config directory
+  --kmer_file kmer_file     Sorted count file produced by KMC  
+  --max_kmers max_kmers     Maximum number of kmers to try (selected at random from candidates). Use 0 to try all kmers.  
+  --freq low_freq           Minimum frequency of kmer to check. Default: most frequent.  
+  --p3 p3_config            Path to Primer3 config directory  
 
 ## filter
 
-  --primer_file PRIMER_FILE
-                        Primer file produced by the kmers subcommand
-  --max_primers max_primers
-                        Maximum number of primers to try (selected at random
-                        from candidates). Use 0 to try all primers.
-  --fg fg_dir, --foreground fg_dir
-                        Directory containing foreground sequences in fasta
-                        format
-  --bg bg_dir, --background bg_dir
-                        Directory containing background sequences in fasta
-                        format
-  --min min_length      Minimum PCR product length
-  --max max_length      Maximum PCR product length
-  --ref ref_genome      Genbank file for one of the target sequences to
-                        identify context-aware primer locations. File name
-                        should be identical except for the file type suffix.
-  --p3 p3_config        Path to Primer3 config directory
+  --primer_file PRIMER_FILE         Primer file produced by the kmers subcommand  
+  --max_primers max_primers         Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.  
+  --fg fg_dir, --foreground fg_dir  Directory containing foreground sequences in fasta format  
+  --bg bg_dir, --background bg_dir  Directory containing background sequences in fasta format  
+  --min min_length                  Minimum PCR product length  
+  --max max_length                  Maximum PCR product length  
+  --ref ref_genome                  Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.  
+  --p3 p3_config                    Path to Primer3 config directory  
 
 ## predict
 
-  --fg fg_dir, --foreground fg_dir
-                        Directory containing foreground sequences in fasta
-                        format
-  --bg bg_dir, --background bg_dir
-                        Directory containing background sequences in fasta
-                        format
-  --fp FP, --fwd_primer FP
-                        Forward primer sequence
-  --rp RP, --rev_primer RP
-                        Reverse primer sequence
+  --fg fg_dir, --foreground fg_dir  Directory containing foreground sequences in fasta format
+  --bg bg_dir, --background bg_dir  Directory containing background sequences in fasta format
+  --fp FP, --fwd_primer FP          Forward primer sequence
+  --rp RP, --rev_primer RP          Reverse primer sequence
 
 ## How it works
 KMC is used to find the unique kmers in a genome, which are then added to a master count of kmers and the number of genomes they appear in uniquely. For now we ignore that some kmers may appear multiple times in a specific genome and therefore be unsuitable as unique primers.

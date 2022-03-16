@@ -329,16 +329,17 @@ def locate_primers(ref, primer_pair, products):
 def output_amplicon_sequences(products, bg_products, prefix):
     # Output all possible amplicon sequences
     both_products = products + bg_products
-    seqs = {seq:i for i,seq in enumerate(set(p.seq for p in both_products))}
+    seqs = {seq:i for i,seq in enumerate(set(p.seq for p in both_products if p is not None))}
     with open(f'{prefix}_products.fasta', 'w') as fo:
         for seq,i in seqs.items():
-            fo.write(f'>Product{i}_{len(seq)}\n')
+            fo.write(f'>Product{i}_{len(seq)}bp\n')
             fo.write(f'{seq}\n')
     with open(f'{prefix}_products.tab', 'w') as fo:
         for p in products:
             fo.write(f'{p.template}\tFG\tProduct{seqs[p.seq]}\n')
         for p in bg_products:
-            fo.write(f'{p.template}\tBG\tProduct{seqs[p.seq]}\n')
+            if p is not None:
+                fo.write(f'{p.template}\tBG\tProduct{seqs[p.seq]}\n')
     return()
 
 def find_sequence_files(fg, bg):
@@ -353,7 +354,7 @@ def find_sequence_files(fg, bg):
 
     return(fg_files, bg_files)
 
-def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg_files, min, max, pool):
+def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg_files, min_length, max_length, pool):
     # Separate function as multiple commands end up using it
     primer_len = len(primers[0].seq)
 
@@ -374,7 +375,7 @@ def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg
     bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
     print('rearranged bg_products')
     # Score primer pairs
-    primer_pairs = [score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], min, max) for primer_pair in primer_pairs]
+    primer_pairs = [score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], bg_products[primer_pair.pair_id], min_length, max_length) for primer_pair in primer_pairs]
     print('scored primer pairs')
     # Filter and sort primer pairs
     primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
@@ -465,23 +466,23 @@ def filter_primers(args, pool):
 
     return(primer_pairs[0].left.seq, primer_pairs[0].right.seq)
 
-def predict_products(args):
-    print(f'Predicting PCR products for primer sequences {args.fwd_primer}:{args.rev_primer} in sequences from {args.foreground} and {args.background}')
+def predict_products(args, pool):
+    print(f'Predicting PCR products for primer sequences {args.fp}:{args.rp} in sequences from {args.fg} and {args.bg}')
 
-    if len(args.fwd_primer) != len(args.rev_primer):
+    if len(args.fp) != len(args.rp):
         sys.stderr.write('Primers must be the same length. Quitting.\n')
         sys.exit(1)
 
     # Create objects to mimic filter steps
-    primer_pairs = [Primer_pair(0, Primer(0, args.fwd_primer), Primer(1, args.rev_primer))]
-    primers = [primer_pair[0].left, primer_pair[0].right]
+    primer_pairs = [Primer_pair(0, Primer(0, args.fp), Primer(1, args.rp))]
+    primers = [primer_pairs[0].left, primer_pairs[0].right]
     write_primers_fasta(primers, f'{args.prefix}_pair.fasta')
 
     # Find all likely sequence files
     fg_files, bg_files = find_sequence_files(args.fg, args.bg)
     
     # Generate products
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, min, max)
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, args.min, args.max,  pool)
     
     output_amplicon_sequences(fg_products[primer_pairs[0].pair_id], bg_products[primer_pairs[0].pair_id], args.prefix)
     
@@ -498,7 +499,7 @@ def pfp_workflow(args, pool):
     print(f'Running the primers-filter-predict workflow')
     args.primer_file = find_primers(args, pool)
     args.fp, args.rp = filter_primers(args, pool)
-    predict_products(args, pool)
+    predict_products(args)
 
 if True:
 #def __main__():

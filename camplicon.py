@@ -485,7 +485,7 @@ def predict_products(args, pool):
     fg_files, bg_files = find_sequence_files(args.fg, args.bg)
     
     # Generate products
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, args.min_length, args.max_length,  pool)
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, 0, 10000,  pool)
     
     output_amplicon_sequences(fg_products[primer_pairs[0].pair_id], bg_products[primer_pairs[0].pair_id], args.prefix)
     
@@ -541,8 +541,6 @@ if True:
     predict_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
     predict_parser.add_argument('--fp', '--fwd_primer', required=True, help='Forward primer sequence')
     predict_parser.add_argument('--rp', '--rev_primer', required=True, help='Reverse primer sequence')
-    predict_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
-    predict_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
 
     full_parser = subparsers.add_parser('full', help='Run the full camplicon workflow')
     full_parser.add_argument('--fg', '--foreground', required=True, metavar='fg_dir', help='Directory containing sequences in fasta format')

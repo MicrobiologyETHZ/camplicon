@@ -336,7 +336,8 @@ def output_amplicon_sequences(products, bg_products, prefix):
             fo.write(f'{seq}\n')
     with open(f'{prefix}_products.tab', 'w') as fo:
         for p in products:
-            fo.write(f'{p.template}\tFG\tProduct{seqs[p.seq]}\n')
+            if p is not None:
+                fo.write(f'{p.template}\tFG\tProduct{seqs[p.seq]}\n')
         for p in bg_products:
             if p is not None:
                 fo.write(f'{p.template}\tBG\tProduct{seqs[p.seq]}\n')
@@ -401,9 +402,9 @@ def find_kmers(args, pool):
 
 def find_primers(args, pool):
     if args.max_kmers != 0:
-        print(f'Finding primers from a maximum of {args.max_kmers} kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
+        sys.stdout.write(f'Finding primers from a maximum of {args.max_kmers} kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
     else:
-        print(f'Finding primers from all kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
+        sys.stdout.write(f'Finding primers from all kmers in {args.kmer_file} using Primer3 from {args.p3}\n')
 
     # Read in kmc_dump file
     kmers = read_kmc(args.kmer_file)
@@ -412,11 +413,13 @@ def find_primers(args, pool):
     if args.freq is None:
         args.freq = max(kmer.freq for kmer in kmers)
     kmers = [kmer for kmer in kmers if kmer.freq>=args.freq]
+    sys.stdout.write(f'Considering {len(kmers)} kmers that occur in at least {args.freq} genomes\n')
 
     # If the list of kmers is too large, subsample
     if args.max_kmers != 0:
         if len(kmers) > args.max_kmers:
             kmers = random.sample(kmers, args.max_kmers)
+            sys.stdout.write(f'Considering only {args.max_kmers} chosen at random\n')
 
     # Run Primer3 on kmers
     primers = pool.starmap(check_kmer_primer3, [(kmer, args.p3) for kmer in kmers])
@@ -431,7 +434,7 @@ def find_primers(args, pool):
     return(f'{args.prefix}_primers.fasta')
 
 def filter_primers(args, pool):
-    print(f'Filtering primers from {args.primer_file}, targetting sequences in {args.fg}, avoiding sequences in {args.bg}. Acceptable products are between {args.min}bp and {args.max}bp, with {args.ref} for context')
+    print(f'Filtering primers from {args.primer_file}, targetting sequences in {args.fg}, avoiding sequences in {args.bg}. Acceptable products are between {args.min_length}bp and {args.max_length}bp, with {args.ref} for context')
 
     # Read in primer file
     primers = read_primers_fasta(args.primer_file)
@@ -450,7 +453,7 @@ def filter_primers(args, pool):
     primer_pairs = list(primer_pairs)
     print(f'{len(primer_pairs)} viable primer pairs')
     # Generate products and score
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min, args.max, pool)
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min_length, args.max_length, pool)
     print(f'{len(primer_pairs)} survived scoring')
     # Locate primers in context
     if args.ref:
@@ -482,7 +485,7 @@ def predict_products(args, pool):
     fg_files, bg_files = find_sequence_files(args.fg, args.bg)
     
     # Generate products
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, args.min, args.max,  pool)
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, f'{args.prefix}_pair.fasta', primer_pairs, fg_files, bg_files, args.min_length, args.max_length,  pool)
     
     output_amplicon_sequences(fg_products[primer_pairs[0].pair_id], bg_products[primer_pairs[0].pair_id], args.prefix)
     

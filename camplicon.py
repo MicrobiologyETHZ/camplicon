@@ -203,7 +203,7 @@ def parse_aln(aln):
         if line[0] != '@':
             fields = line.strip().split("\t")
             if fields[1] != '4':
-                strand = (int(fields[1])/8)-1
+                strand = 1-(int(fields[1])/8)
                 edist = re.sub("NM:i:", "", fields[12])
                 primer_id = fields[0].split("_")[0]
                 primer_hit = Primer_hit(primer_id, fields[2], strand, fields[3], edist)
@@ -502,7 +502,7 @@ def pfp_workflow(args, pool):
     print(f'Running the primers-filter-predict workflow')
     args.primer_file = find_primers(args, pool)
     args.fp, args.rp = filter_primers(args, pool)
-    predict_products(args)
+    predict_products(args, pool)
 
 if True:
 #def __main__():

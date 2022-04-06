@@ -434,7 +434,7 @@ def find_primers(args, pool):
     return(f'{args.prefix}_primers.fasta')
 
 def filter_primers(args, pool):
-    print(f'Filtering primers from {args.primer_file}, targetting sequences in {args.fg}, avoiding sequences in {args.bg}. Acceptable products are between {args.min_length}bp and {args.max_length}bp, with {args.ref} for context')
+    print(f'Filtering primers from {args.primer_file}, targetting sequences in {args.fg}, avoiding sequences in {args.bg}. Acceptable products are between {args.lmin}bp and {args.lmax}bp, with {args.ref} for context')
 
     # Read in primer file
     primers = read_primers_fasta(args.primer_file)
@@ -453,7 +453,7 @@ def filter_primers(args, pool):
     primer_pairs = list(primer_pairs)
     print(f'{len(primer_pairs)} viable primer pairs')
     # Generate products and score
-    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.min_length, args.max_length, pool)
+    primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.lmin, args.lmax, pool)
     print(f'{len(primer_pairs)} survived scoring')
     # Locate primers in context
     if args.ref:
@@ -531,8 +531,8 @@ if True:
     filter_parser.add_argument('--max_primers', metavar='max_primers', default=1000, type=int, help='Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.')
     filter_parser.add_argument('--fg', '--foreground', required=True, metavar='fg_dir', help='Directory containing foreground sequences in fasta format')
     filter_parser.add_argument('--bg', '--background', required=True, metavar='bg_dir', help='Directory containing background sequences in fasta format')
-    filter_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
-    filter_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    filter_parser.add_argument('--lmin', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    filter_parser.add_argument('--lmax', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
     filter_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
     filter_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
 
@@ -551,8 +551,8 @@ if True:
     full_parser.add_argument('--freq', metavar='low_freq', type=int, help='Minimum frequency of kmer to check. Default: most frequent.')
     full_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     full_parser.add_argument('--max_primers', metavar='max_primers', default=1000, type=int, help='Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.')
-    full_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
-    full_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    full_parser.add_argument('--lmin', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    full_parser.add_argument('--lmax', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
     full_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
     
     pfp_parser = subparsers.add_parser('pfp', help='Run the workflow starting from a KMC kmer count file')
@@ -564,8 +564,8 @@ if True:
     pfp_parser.add_argument('--freq', metavar='low_freq', type=int, help='Minimum frequency of kmer to check. Default: most frequent.')
     pfp_parser.add_argument('--p3', metavar='p3_config', default='/nfs/modules/modules/software/Primer3/2.4.0-foss-2018b/primer3-2.4.0/src/primer3_config/', help='Path to Primer3 config directory')
     pfp_parser.add_argument('--max_primers', metavar='max_primers', default=1000, type=int, help='Maximum number of primers to try (selected at random from candidates). Use 0 to try all primers.')
-    pfp_parser.add_argument('--min', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
-    pfp_parser.add_argument('--max', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
+    pfp_parser.add_argument('--lmin', metavar='min_length', default=300, type=int, help='Minimum PCR product length')
+    pfp_parser.add_argument('--lmax', metavar='max_length', default=500, type=int, help='Maximum PCR product length')
     pfp_parser.add_argument('--ref', metavar='ref_genome', help='Genbank file for one of the target sequences to identify context-aware primer locations. File name should be identical except for the file type suffix.')
 
     args = parser.parse_args()

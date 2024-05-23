@@ -1,12 +1,4 @@
-test_fg/*.amb
-test_fg/*.ann
-test_fg/*.bwt
-test_fg/*.pac
-test_fg/*.sa
-test_bg/*.amb
-test_bg/*.ann
-test_bg/*.bwt
-test_bg/*.pac
-test_bg/*.sa
+*fg/*
+*bg/*
 *kmc*
 .nfs*

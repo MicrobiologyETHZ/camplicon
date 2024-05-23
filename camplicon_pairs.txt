@@ -1,3 +1,1 @@
 kmer1_id	kmer1_seq	kmer1_temp	kmer2_id	kmer2_seq	kmer2_temp	n_targets	n_seqs	info	penalty	mean_len	std_len	off_targets	off_seqs	overlap
-5484253	ACGCCTATCATTGCAGCA	57.038	19045783rc	TGGCTGCTGAAGGTGAAG	57.193	-	1	1	0.0	9.768573	367.0	0.0	0	0	0
-19045783	CTTCACCTTCAGCAGCCA	57.193	5484253rc	TGCTGCAATGATAGGCGT	57.038	-	1	1	0.0	9.768573	367.0	0.0	0	0	0

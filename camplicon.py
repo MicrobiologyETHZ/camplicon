@@ -100,12 +100,12 @@ def parse_kmc_info(output):
     data = dict((a.strip(), b.strip()) for a, b in [row.split(":") for row in [line for line in output.strip().split("\n")]])
     return(data)
 
-def run_kmc(fg_files, bg_files, kmc_dir, kmer_len, prefix, threads):
+def find_common_kmers(fg_files, bg_files, kmc_dir, kmer_len, prefix, threads):
     # Run kmc on the first file
     output = subprocess.check_output(f'{kmc_dir}/kmc -t{threads} -k{kmer_len} -ci1 -cx1 -cs8192 -fm {fg_files[0]} {prefix}_db /tmp/ &> /dev/null', shell=True).decode()
     lines = output.split("\n")
 
-    # Find common kmers in target sequences
+    # Find common non-repeat kmers in target sequences
     if len(fg_files)>1:
         for fg_file in fg_files[1:]:
             sys.stderr.write(f'Adding {fg_file} to kmer database..\n')
@@ -188,27 +188,33 @@ def read_primers_fasta(filename):
                 id, melt = line.strip().lstrip('>').split("_")
     return(primers)
 
-def align_primers(primers_file, target_file):
-    # Align primers fasta file against a target file with BWA, allowing only 1 error
-    sys.stderr.write(f'Aligning {target_file}\n')
-    subprocess.run(f'bwa index {target_file} 2> /dev/null', shell=True, executable="/bin/bash")
-    aln = subprocess.check_output(f'bwa aln -n 1 {target_file} {primers_file} 2> /dev/null | bwa samse {target_file} - {primers_file} 2> /dev/null', shell=True, executable="/bin/bash").decode()
-    aln = aln.strip().split("\n")
-    return(aln)
+def blast_index(fasta):
+    subprocess.run(f'makeblastdb -in {fasta} -dbtype nucl', shell=True)
+    pass
 
-def parse_aln(aln):
-    # Parse a BWA alignment and return hits in useful format
-    primer_hits = {}
-    for line in aln:
-        if line[0] != '@':
-            fields = line.strip().split("\t")
-            if fields[1] != '4':
-                strand = 1-(int(fields[1])/8)
-                edist = re.sub("NM:i:", "", fields[12])
-                primer_id = fields[0].split("_")[0]
-                primer_hit = Primer_hit(primer_id, fields[2], strand, fields[3], edist)
-                primer_hits[primer_hit.primer_id] = primer_hit
+def blast_primers(primer_len, primer_file, target_file):
+    blast_index(target_file)
+
+    word_len = int((primer_len+primer_len%2)/2)
+
+    sys.stdout.write(f'Aligning candidate primers to {target_file}\n')
+    alns = subprocess.check_output(f'blastn -query {primer_file} -db {target_file} -outfmt 6 -word_size {word_len}', shell=True, stderr=subprocess.DEVNULL).decode()
+    if len(alns) > 0:
+        alns = alns.strip().split("\n")
+        alns = [x.strip().split("\t") for x in alns]
+        # Only keep alignments that go to the end of the kmer and as long as the word length
+        alns = [x for x in alns if int(x[7])==primer_len]
+        alns = [x for x in alns if int(x[3])>=word_len]
+
+    primer_hits = dict([aln_to_primer_hit(aln) for aln in alns])
+
     return(primer_hits)
+
+def aln_to_primer_hit(aln):
+    id = aln[0].split("_")[0]
+    strand = 1 if aln[9] > aln[8] else -1
+    primer_hit = Primer_hit(id, aln[1], strand, aln[8], aln[4])
+    return((id, primer_hit))
 
 def generate_primer_pairs(primers):
     # Create all possible pairs of primers
@@ -272,18 +278,30 @@ def generate_product(primer_pair, primer_hits, genome, primer_len):
         return(None)
     return(product)
 
-def generate_products_from_genome(primers, primer_file, genome_file, primer_pairs, primer_len):
+def generate_products_from_genome(primer_file, genome_file, primer_pairs, primer_len):
     genome = read_genome(genome_file)
-    aln = align_primers(primer_file, genome_file)
-    primer_hits = parse_aln(aln)
-
+    primer_hits = blast_primers(primer_len, primer_file, genome_file)
     products = {primer_pair.pair_id:generate_product(primer_pair, primer_hits, genome, primer_len) for primer_pair in primer_pairs}
+    # Add an entry to prevent a dict of Nones being collapsed (by return??)
+    products['blank'] = 'blank'
     return(products)
 
 def list_entropy(l):
     freq = [l.count(x)/len(l) for x in set(l)]
     entropy = [-x*np.log2(x) for x in freq]
     return(np.sum(entropy))
+
+def partially_score_primer_pair(primer_pair, fg_products, min_length, max_length):
+    good_fg_products = [product for product in fg_products if product is not None]
+    good_fg_products = [product for product in good_fg_products if (product.seq != "") and (max_length > len(product) > min_length)]
+    primer_pair.nhits = len(good_fg_products)
+    primer_pair.nseq = len(set(good_fg_products))
+    if primer_pair.nhits > 0:
+        primer_pair.length = np.mean([len(product) for product in good_fg_products])
+        primer_pair.se = np.std([len(product) for product in good_fg_products])/np.sqrt(len(good_fg_products))
+        primer_pair.info = list_entropy(good_fg_products)
+
+    return(primer_pair)
 
 def score_primer_pair(primer_pair, fg_products, bg_products, min_length, max_length):
     good_fg_products = [product for product in fg_products if product is not None]
@@ -360,17 +378,24 @@ def generate_products_and_score(primers, primer_file, primer_pairs, fg_files, bg
     primer_len = len(primers[0].seq)
 
     # Generate products for each primer pair for each foreground file
-    fg_products = pool.starmap(generate_products_from_genome, [(primers, primer_file, fg_file, primer_pairs, primer_len) for fg_file in fg_files])
+    fg_products = pool.starmap(generate_products_from_genome, [(primer_file, fg_file, primer_pairs, primer_len) for fg_file in fg_files])
     # Check if there are any foreground products to score
-    if len([product for products in fg_products for product in products.values() if product is not None]) == 0:
+    if len([product for products in fg_products for product in products.values() if product is not None]) == 1:
         sys.stderr.write('There are no viable foreground PCR products. Quitting.\n')
         sys.exit(1)
     print('made fg_products')
     # Rearrange all products to first reference primer pair, then genome
     fg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in fg_products] for primer_pair in primer_pairs}
     print('rearranged fg_products')
+    # Partially score primers based on foreground
+    primer_pairs = [partially_score_primer_pair(primer_pair, fg_products[primer_pair.pair_id], min_length, max_length) for primer_pair in primer_pairs]
+    primer_pairs = [primer_pair for primer_pair in primer_pairs if primer_pair.nhits > 0]
+    primer_pairs = sorted(primer_pairs, key=lambda primer_pair: (primer_pair.nhits, primer_pair.nseq, primer_pair.info, -primer_pair.penalty), reverse=True)
+    # Report surviving number of pairs
+    sys.stdout.write(f'{len(primer_pairs)} primer pairs remain after checking foreground products\n')    
+
     # Generate products for each primer pair for each off-target genome
-    bg_products = pool.starmap(generate_products_from_genome, [(primers, primer_file, bg_file, primer_pairs, primer_len) for bg_file in bg_files])
+    bg_products = pool.starmap(generate_products_from_genome, [(primer_file, bg_file, primer_pairs, primer_len) for bg_file in bg_files])
     print('made bg_products')
     # Rearrange bg products to first reference primer pair, then genome
     bg_products = {primer_pair.pair_id:[products[primer_pair.pair_id] for products in bg_products] for primer_pair in primer_pairs}
@@ -394,7 +419,7 @@ def find_kmers(args, pool):
     fg_files, bg_files = find_sequence_files(args.fg, args.bg)
 
     # Iterate through sequences with kmc
-    kmer_count = run_kmc(fg_files, bg_files, args.kmc, args.kmer_len, args.prefix, args.threads)
+    kmer_count = find_common_kmers(fg_files, bg_files, args.kmc, args.kmer_len, args.prefix, args.threads)
 
     sys.stdout.write(f'Found {kmer_count} kmers, output to file: {args.prefix}_ukmc.txt\n')
 
@@ -412,7 +437,7 @@ def find_primers(args, pool):
     # Filter to acceptable frequencies
     if args.freq is None:
         args.freq = max(kmer.freq for kmer in kmers)
-    kmers = [kmer for kmer in kmers if kmer.freq>=args.freq]
+    kmers = [kmer for kmer in kmers if kmer.freq >= args.freq]
     sys.stdout.write(f'Considering {len(kmers)} kmers that occur in at least {args.freq} genomes\n')
 
     # If the list of kmers is too large, subsample
@@ -455,6 +480,9 @@ def filter_primers(args, pool):
     # Generate products and score
     primer_pairs, fg_products, bg_products = generate_products_and_score(primers, args.primer_file, primer_pairs, fg_files, bg_files, args.lmin, args.lmax, pool)
     print(f'{len(primer_pairs)} survived scoring')
+    if len(primer_pairs) == 0:
+        sys.stderr.write('There are no viable primer pairs. Quitting.\n')
+        sys.exit(1)
     # Locate primers in context
     if args.ref:
         primer_pairs = pool.starmap(locate_primers, [(args.ref, primer_pair, fg_products[primer_pair.pair_id]) for primer_pair in primer_pairs])
